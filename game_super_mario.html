@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Super Mario Classic HTML5</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', monospace, cursive;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #0f172a;
+        }
+        canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        }
+        .retro-btn {
+            background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+            border: 4px solid #ffffff;
+            box-shadow: inset -4px -4px 0px 0px #1e40af, 4px 4px 0px 0px #000000;
+        }
+        .retro-btn:active {
+            transform: translate(2px, 2px);
+            box-shadow: inset -2px -2px 0px 0px #1e40af, 2px 2px 0px 0px #000000;
+        }
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        .touch-btn:active {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-2 text-white select-none">
+
+    <!-- Header Stats Bar -->
+    <div class="w-full max-w-4xl bg-slate-900 border-4 border-yellow-500 rounded-xl p-3 mb-3 shadow-lg flex flex-wrap justify-between items-center text-xs md:text-sm">
+        <div class="flex items-center space-x-2 my-1">
+            <span class="text-yellow-400">MARIO</span>
+            <span id="scoreDisplay" class="text-white">000000</span>
+        </div>
+        <div class="flex items-center space-x-2 my-1">
+            <span class="text-yellow-400">🪙 SYILING</span>
+            <span id="coinsDisplay" class="text-white">x00</span>
+        </div>
+        <div class="flex items-center space-x-2 my-1">
+            <span class="text-yellow-400">❤️ NYAWA</span>
+            <span id="livesDisplay" class="text-white">3</span>
+        </div>
+        <div class="flex items-center space-x-2 my-1">
+            <span class="text-yellow-400">STAGE</span>
+            <span class="text-white">1-1</span>
+        </div>
+    </div>
+
+    <!-- Game Viewport Container -->
+    <div class="relative w-full max-w-4xl flex flex-col items-center">
+        <canvas id="gameCanvas" width="800" height="450" class="w-full h-auto rounded-lg bg-sky-400 border-4 border-slate-800"></canvas>
+
+        <!-- Overlay Menu (Start / Game Over / Victory) -->
+        <div id="overlay" class="absolute inset-0 bg-black/80 rounded-lg flex flex-col items-center justify-center p-4 text-center z-10">
+            <h1 id="overlayTitle" class="text-2xl md:text-4xl text-yellow-400 mb-4 tracking-wider leading-relaxed">SUPER MARIO</h1>
+            <p id="overlaySub" class="text-xs md:text-base text-gray-300 mb-8 max-w-md leading-relaxed">
+                Gunakan Papan Kekunci [A][D] atau [⬅️][➡️] untuk Bergerak, dan [W], [SPACE] atau [⬆️] untuk Melompat!
+            </p>
+            <button id="startBtn" class="retro-btn px-6 py-4 text-sm md:text-lg font-bold text-white rounded-md transition transform hover:scale-105 cursor-pointer">
+                MULA MAIN
+            </button>
+        </div>
+    </div>
+
+    <!-- Mobile Touch Controls -->
+    <div class="w-full max-w-4xl mt-4 flex justify-between items-center px-4 md:hidden">
+        <div class="flex gap-2">
+            <button id="btnLeft" class="touch-btn w-16 h-16 rounded-full text-2xl flex items-center justify-center font-bold text-white active:scale-95">◀</button>
+            <button id="btnRight" class="touch-btn w-16 h-16 rounded-full text-2xl flex items-center justify-center font-bold text-white active:scale-95">▶</button>
+        </div>
+        <div>
+            <button id="btnJump" class="touch-btn w-20 h-20 rounded-full text-xl flex items-center justify-center font-bold text-yellow-300 active:scale-95">LOMPAT</button>
+        </div>
+    </div>
+
+    <!-- Instructions / Footer -->
+    <div class="mt-4 text-slate-400 text-xs text-center">
+        Kawalan: ← / A (Kiri) | → / D (Kanan) | W / Space / ↑ (Lompat)
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        // Synthesized Retro Sound Effects (No external audio files required)
+        const AudioFX = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
+            playJump() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            },
+            playCoin() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(987.77, this.ctx.currentTime); // B5
+                osc.frequency.setValueAtTime(1318.51, this.ctx.currentTime + 0.08); // E6
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            },
+            playStomp() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(30, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            },
+            playPowerUp() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(800, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.25);
+            },
+            playGameOver() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 0.6);
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.6);
+            }
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const TILE_SIZE = 32;
+        const GRAVITY = 0.55;
+        const FRICTION = 0.82;
+
+        // UI Elements
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const coinsDisplay = document.getElementById('coinsDisplay');
+        const livesDisplay = document.getElementById('livesDisplay');
+        const overlay = document.getElementById('overlay');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlaySub = document.getElementById('overlaySub');
+        const startBtn = document.getElementById('startBtn');
+
+        // Game State
+        let gameRunning = false;
+        let score = 0;
+        let coins = 0;
+        let lives = 3;
+        let cameraX = 0;
+
+        // Key states
+        const keys = {
+            left: false,
+            right: false,
+            jump: false
+        };
+
+        class Mario {
+            constructor() {
+                this.reset();
+            }
+
+            reset() {
+                this.x = 80;
+                this.y = 200;
+                this.width = 28;
+                this.height = 36;
+                this.vx = 0;
+                this.vy = 0;
+                this.speed = 4.5;
+                this.jumpForce = -12.5;
+                this.grounded = false;
+                this.facing = 'right';
+                this.invulnerable = 0;
+                this.animFrame = 0;
+            }
+
+            update(map) {
+                // Horizontal Movement
+                if (keys.left) {
+                    this.vx = -this.speed;
+                    this.facing = 'left';
+                } else if (keys.right) {
+                    this.vx = this.speed;
+                    this.facing = 'right';
+                } else {
+                    this.vx *= FRICTION;
+                }
+
+                // Jump
+                if (keys.jump && this.grounded) {
+                    this.vy = this.jumpForce;
+                    this.grounded = false;
+                    AudioFX.playJump();
+                }
+
+                // Apply Gravity
+                this.vy += GRAVITY;
+
+                // Move X and collide
+                this.x += this.vx;
+                this.collideX(map);
+
+                // Move Y and collide
+                this.y += this.vy;
+                this.grounded = false; // reset grounded
+                this.collideY(map);
+
+                // Screen boundaries
+                if (this.x < 0) this.x = 0;
+
+                // Invulnerability flicker timer
+                if (this.invulnerable > 0) this.invulnerable--;
+
+                // Animation tick
+                this.animFrame++;
+            }
+
+            collideX(map) {
+                const startTileY = Math.floor(this.y / TILE_SIZE);
+                const endTileY = Math.floor((this.y + this.height - 1) / TILE_SIZE);
+
+                if (this.vx > 0) { // Moving Right
+                    const tileX = Math.floor((this.x + this.width) / TILE_SIZE);
+                    for (let ty = startTileY; ty <= endTileY; ty++) {
+                        if (map.isSolid(tileX, ty)) {
+                            this.x = tileX * TILE_SIZE - this.width;
+                            this.vx = 0;
+                            break;
+                        }
+                    }
+                } else if (this.vx < 0) { // Moving Left
+                    const tileX = Math.floor(this.x / TILE_SIZE);
+                    for (let ty = startTileY; ty <= endTileY; ty++) {
+                        if (map.isSolid(tileX, ty)) {
+                            this.x = (tileX + 1) * TILE_SIZE;
+                            this.vx = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            collideY(map) {
+                const startTileX = Math.floor(this.x / TILE_SIZE);
+                const endTileX = Math.floor((this.x + this.width - 1) / TILE_SIZE);
+
+                if (this.vy > 0) { // Falling
+                    const tileY = Math.floor((this.y + this.height) / TILE_SIZE);
+                    for (let tx = startTileX; tx <= endTileX; tx++) {
+                        if (map.isSolid(tx, tileY)) {
+                            this.y = tileY * TILE_SIZE - this.height;
+                            this.vy = 0;
+                            this.grounded = true;
+                            break;
+                        }
+                    }
+                } else if (this.vy < 0) { // Jumping up
+                    const tileY = Math.floor(this.y / TILE_SIZE);
+                    for (let tx = startTileX; tx <= endTileX; tx++) {
+                        if (map.isSolid(tx, tileY)) {
+                            this.y = (tileY + 1) * TILE_SIZE;
+                            this.vy = 0;
+                            map.hitBlock(tx, tileY);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            draw(ctx, cameraX) {
+                if (this.invulnerable % 4 >= 2) return; // Flash when hit
+
+                ctx.save();
+                const screenX = Math.floor(this.x - cameraX);
+                const screenY = Math.floor(this.y);
+
+                // Mario Red/Blue Character Drawing
+                // Hat / Head
+                ctx.fillStyle = '#ef4444'; // Red
+                ctx.fillRect(screenX + 4, screenY, 20, 8);
+                ctx.fillRect(screenX + (this.facing === 'right' ? 8 : 0), screenY + 4, 18, 6);
+
+                // Face & Skin
+                ctx.fillStyle = '#fca5a5';
+                ctx.fillRect(screenX + 6, screenY + 8, 16, 10);
+                // Mustache
+                ctx.fillStyle = '#451a03';
+                ctx.fillRect(screenX + (this.facing === 'right' ? 12 : 2), screenY + 12, 12, 4);
+
+                // Shirt & Overalls
+                ctx.fillStyle = '#ef4444'; // Red Shirt
+                ctx.fillRect(screenX + 4, screenY + 18, 20, 8);
+
+                ctx.fillStyle = '#2563eb'; // Blue Overalls
+                ctx.fillRect(screenX + 6, screenY + 22, 16, 10);
+                // Yellow buttons
+                ctx.fillStyle = '#facc15';
+                ctx.fillRect(screenX + 8, screenY + 24, 3, 3);
+                ctx.fillRect(screenX + 17, screenY + 24, 3, 3);
+
+                // Shoes
+                ctx.fillStyle = '#78350f';
+                const walkCycle = Math.floor(this.animFrame / 6) % 2;
+                if (!this.grounded) {
+                    ctx.fillRect(screenX + 2, screenY + 30, 10, 6);
+                    ctx.fillRect(screenX + 16, screenY + 30, 10, 6);
+                } else if (Math.abs(this.vx) > 0.5 && walkCycle === 1) {
+                    ctx.fillRect(screenX, screenY + 30, 12, 6);
+                    ctx.fillRect(screenX + 16, screenY + 30, 12, 6);
+                } else {
+                    ctx.fillRect(screenX + 2, screenY + 30, 11, 6);
+                    ctx.fillRect(screenX + 15, screenY + 30, 11, 6);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Goomba {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.width = 28;
+                this.height = 28;
+                this.vx = -1.2;
+                this.alive = true;
+                this.squished = false;
+                this.squishTimer = 0;
+            }
+
+            update(map) {
+                if (this.squished) {
+                    this.squishTimer++;
+                    return;
+                }
+
+                // Simple AI movement
+                this.x += this.vx;
+
+                // Wall Collision
+                const tileX = this.vx > 0 ? Math.floor((this.x + this.width) / TILE_SIZE) : Math.floor(this.x / TILE_SIZE);
+                const tileY = Math.floor((this.y + this.height / 2) / TILE_SIZE);
+                if (map.isSolid(tileX, tileY)) {
+                    this.vx *= -1; // Reverse direction
+                }
+            }
+
+            draw(ctx, cameraX) {
+                const screenX = Math.floor(this.x - cameraX);
+                const screenY = Math.floor(this.y);
+
+                if (screenX < -50 || screenX > canvas.width + 50) return; // Culling
+
+                if (this.squished) {
+                    // Squished Goomba
+                    ctx.fillStyle = '#92400e';
+                    ctx.fillRect(screenX, screenY + 18, 28, 10);
+                    ctx.fillStyle = '#fef08a';
+                    ctx.fillRect(screenX + 6, screenY + 20, 4, 4);
+                    ctx.fillRect(screenX + 18, screenY + 20, 4, 4);
+                    return;
+                }
+
+                // Normal Goomba Body (Brown mushroom)
+                ctx.fillStyle = '#92400e'; // Dark Brown
+                ctx.beginPath();
+                ctx.arc(screenX + 14, screenY + 12, 14, Math.PI, 0, false);
+                ctx.fill();
+                ctx.fillRect(screenX + 4, screenY + 12, 20, 10);
+
+                // Stem/Feet
+                ctx.fillStyle = '#fef08a'; // Light Feet
+                ctx.fillRect(screenX + 2, screenY + 20, 10, 8);
+                ctx.fillRect(screenX + 16, screenY + 20, 10, 8);
+
+                // Eyes
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(screenX + 6, screenY + 8, 5, 8);
+                ctx.fillRect(screenX + 17, screenY + 8, 5, 8);
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(screenX + 8, screenY + 10, 3, 4);
+                ctx.fillRect(screenX + 17, screenY + 10, 3, 4);
+            }
+        }
+
+        class LevelMap {
+            constructor() {
+                this.width = 120; // 120 tiles wide
+                this.height = 14; // 14 tiles high
+                this.grid = [];
+                this.coins = [];
+                this.generateLevel();
+            }
+
+            generateLevel() {
+                // Initialize empty grid
+                for (let y = 0; y < this.height; y++) {
+                    this.grid[y] = new Array(this.width).fill(0);
+                }
+
+                // Ground tiles (1: Brick, 2: Floor, 3: Question, 4: Empty Question, 5: Pipe)
+                for (let x = 0; x < this.width; x++) {
+                    // Create pit gaps
+                    if ((x >= 28 && x <= 30) || (x >= 65 && x <= 67) || (x >= 88 && x <= 89)) {
+                        continue;
+                    }
+                    this.grid[12][x] = 2; // Top ground
+                    this.grid[13][x] = 2; // Sub ground
+                }
+
+                // Add Question Blocks & Bricks
+                this.setBlock(8, 8, 3);  // ? Block
+                this.setBlock(12, 8, 1); // Brick
+                this.setBlock(13, 8, 3); // ? Block
+                this.setBlock(14, 8, 1); // Brick
+                this.setBlock(15, 8, 3); // ? Block
+                this.setBlock(16, 8, 1); // Brick
+                this.setBlock(14, 4, 3); // High ? Block
+
+                // Pipes
+                this.createPipe(20, 10, 2);
+                this.createPipe(38, 9, 3);
+                this.createPipe(52, 8, 4);
+
+                // More Blocks
+                for (let x = 72; x <= 78; x++) this.setBlock(x, 8, 1);
+                this.setBlock(74, 8, 3);
+                this.setBlock(75, 4, 3);
+
+                // Staircase near end
+                for (let i = 0; i < 4; i++) {
+                    for (let j = 0; j <= i; j++) {
+                        this.setBlock(98 + i, 11 - j, 1);
+                    }
+                }
+
+                // Flagpole Base and Pole
+                for (let y = 3; y <= 11; y++) {
+                    this.grid[y][110] = 6; // Flagpole segment
+                }
+                this.grid[2][110] = 7; // Flag Top Ball
+
+                // Floating Coins
+                this.addCoin(10 * TILE_SIZE + 8, 7 * TILE_SIZE);
+                this.addCoin(21 * TILE_SIZE + 8, 7 * TILE_SIZE);
+                this.addCoin(22 * TILE_SIZE + 8, 7 * TILE_SIZE);
+                this.addCoin(53 * TILE_SIZE + 8, 6 * TILE_SIZE);
+                for (let c = 72; c <= 78; c += 2) {
+                    this.addCoin(c * TILE_SIZE + 8, 5 * TILE_SIZE);
+                }
+            }
+
+            createPipe(x, y, height) {
+                for (let i = 0; i < height; i++) {
+                    this.grid[y + i][x] = 5;
+                    this.grid[y + i][x + 1] = 5;
+                }
+            }
+
+            setBlock(x, y, type) {
+                if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                    this.grid[y][x] = type;
+                }
+            }
+
+            isSolid(x, y) {
+                if (x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+                const tile = this.grid[y][x];
+                return tile === 1 || tile === 2 || tile === 3 || tile === 4 || tile === 5;
+            }
+
+            hitBlock(x, y) {
+                const tile = this.grid[y][x];
+                if (tile === 3) { // Question block hits
+                    this.grid[y][x] = 4; // Used question block
+                    coins += 1;
+                    score += 200;
+                    AudioFX.playCoin();
+                    updateHUD();
+                } else if (tile === 1) { // Break brick
+                    this.grid[y][x] = 0;
+                    score += 50;
+                    AudioFX.playStomp();
+                    updateHUD();
+                }
+            }
+
+            addCoin(x, y) {
+                this.coins.push({ x, y, collected: false });
+            }
+
+            draw(ctx, cameraX) {
+                const startCol = Math.max(0, Math.floor(cameraX / TILE_SIZE));
+                const endCol = Math.min(this.width, Math.ceil((cameraX + canvas.width) / TILE_SIZE) + 1);
+
+                // Render Map Grid
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = startCol; x < endCol; x++) {
+                        const tile = this.grid[y][x];
+                        const px = x * TILE_SIZE - cameraX;
+                        const py = y * TILE_SIZE;
+
+                        if (tile === 1) { // Red Brick Block
+                            ctx.fillStyle = '#b91c1c';
+                            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                            ctx.strokeStyle = '#7f1d1d';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+                            // Brick texture line
+                            ctx.beginPath();
+                            ctx.moveTo(px, py + 16); ctx.lineTo(px + 32, py + 16);
+                            ctx.moveTo(px + 16, py); ctx.lineTo(px + 16, py + 16);
+                            ctx.moveTo(px + 8, py + 16); ctx.lineTo(px + 8, py + 32);
+                            ctx.stroke();
+                        } else if (tile === 2) { // Ground Tile
+                            ctx.fillStyle = '#15803d'; // Grass Green Top
+                            ctx.fillRect(px, py, TILE_SIZE, 6);
+                            ctx.fillStyle = '#854d0e'; // Dirt
+                            ctx.fillRect(px, py + 6, TILE_SIZE, TILE_SIZE - 6);
+                        } else if (tile === 3) { // Active Question Block
+                            ctx.fillStyle = '#eab308';
+                            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                            ctx.strokeStyle = '#a16207';
+                            ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+                            ctx.fillStyle = '#78350f';
+                            ctx.font = '16px "Press Start 2P"';
+                            ctx.fillText('?', px + 8, py + 24);
+                        } else if (tile === 4) { // Empty Question Block
+                            ctx.fillStyle = '#a16207';
+                            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                            ctx.strokeStyle = '#451a03';
+                            ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+                        } else if (tile === 5) { // Pipe
+                            ctx.fillStyle = '#16a34a';
+                            ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+                            ctx.strokeStyle = '#14532d';
+                            ctx.strokeRect(px, py, TILE_SIZE, TILE_SIZE);
+                        } else if (tile === 6) { // Flagpole
+                            ctx.fillStyle = '#94a3b8';
+                            ctx.fillRect(px + 12, py, 8, TILE_SIZE);
+                        } else if (tile === 7) { // Flag Ball
+                            ctx.fillStyle = '#22c55e';
+                            ctx.beginPath();
+                            ctx.arc(px + 16, py + 16, 12, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            // Triangle Flag
+                            ctx.fillStyle = '#ef4444';
+                            ctx.beginPath();
+                            ctx.moveTo(px + 12, py + 16);
+                            ctx.lineTo(px - 24, py + 28);
+                            ctx.lineTo(px + 12, py + 40);
+                            ctx.fill();
+                        }
+                    }
+                }
+
+                // Render Coins
+                this.coins.forEach(c => {
+                    if (!c.collected) {
+                        const cx = c.x - cameraX;
+                        if (cx > -20 && cx < canvas.width + 20) {
+                            ctx.fillStyle = '#facc15';
+                            ctx.beginPath();
+                            ctx.ellipse(cx + 8, c.y + 10, 6, 10, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = '#ca8a04';
+                            ctx.stroke();
+                        }
+                    }
+                });
+            }
+        }
+
+        let mario = new Mario();
+        let levelMap = new LevelMap();
+        let goombas = [];
+
+        function spawnEnemies() {
+            goombas = [
+                new Goomba(450, 350),
+                new Goomba(750, 350),
+                new Goomba(900, 350),
+                new Goomba(1250, 350),
+                new Goomba(1600, 350),
+                new Goomba(2100, 350),
+                new Goomba(2600, 350),
+            ];
+        }
+
+        function updateHUD() {
+            scoreDisplay.textContent = String(score).padStart(6, '0');
+            coinsDisplay.textContent = 'x' + String(coins).padStart(2, '0');
+            livesDisplay.textContent = lives;
+        }
+
+        window.addEventListener('keydown', (e) => {
+            AudioFX.init();
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.jump = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') keys.jump = false;
+        });
+
+        // Mobile touch controls listener
+        const bindTouch = (id, keyName) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); AudioFX.init(); keys[keyName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+            btn.addEventListener('mousedown', () => { AudioFX.init(); keys[keyName] = true; });
+            btn.addEventListener('mouseup', () => { keys[keyName] = false; });
+        };
+        bindTouch('btnLeft', 'left');
+        bindTouch('btnRight', 'right');
+        bindTouch('btnJump', 'jump');
+
+        function checkEnemyCollisions() {
+            goombas.forEach(g => {
+                if (!g.alive || g.squished) return;
+
+                // Simple AABB Bounding Box
+                if (
+                    mario.x < g.x + g.width &&
+                    mario.x + mario.width > g.x &&
+                    mario.y < g.y + g.height &&
+                    mario.y + mario.height > g.y
+                ) {
+                    // Stomp enemy from top
+                    if (mario.vy > 0 && mario.y + mario.height - mario.vy <= g.y + 12) {
+                        g.squished = true;
+                        mario.vy = -7.5; // Bounce off
+                        score += 100;
+                        AudioFX.playStomp();
+                        updateHUD();
+                        setTimeout(() => { g.alive = false; }, 400);
+                    } else if (mario.invulnerable <= 0) {
+                        // Player takes hit
+                        lives--;
+                        updateHUD();
+                        if (lives <= 0) {
+                            gameOver(false);
+                        } else {
+                            AudioFX.playGameOver();
+                            mario.invulnerable = 60; // 1 sec immunity
+                            mario.vy = -8;
+                        }
+                    }
+                }
+            });
+        }
+
+        function checkCoinCollisions() {
+            levelMap.coins.forEach(c => {
+                if (!c.collected) {
+                    if (
+                        mario.x < c.x + 16 &&
+                        mario.x + mario.width > c.x &&
+                        mario.y < c.y + 20 &&
+                        mario.y + mario.height > c.y
+                    ) {
+                        c.collected = true;
+                        coins++;
+                        score += 200;
+                        AudioFX.playCoin();
+                        updateHUD();
+                    }
+                }
+            });
+        }
+
+        function checkLevelFinish() {
+            // Reached Flagpole
+            if (mario.x >= 110 * TILE_SIZE) {
+                gameOver(true);
+            }
+        }
+
+        function gameOver(isWin) {
+            gameRunning = false;
+            overlay.classList.remove('hidden');
+            if (isWin) {
+                AudioFX.playPowerUp();
+                overlayTitle.textContent = "TAHNIAH! ANDA MENANG!";
+                overlayTitle.className = "text-2xl md:text-3xl text-green-400 mb-4";
+                overlaySub.textContent = `Syabas! Anda berjaya menamatkan tahap 1-1 dengan Markah: ${score}!`;
+                startBtn.textContent = "MAIN LAGI";
+            } else {
+                AudioFX.playGameOver();
+                overlayTitle.textContent = "GAME OVER";
+                overlayTitle.className = "text-3xl md:text-5xl text-red-500 mb-4";
+                overlaySub.textContent = "Mario kehabisan nyawa! Cuba lagi untuk mengalahkan Goomba!";
+                startBtn.textContent = "CUBA LAGI";
+            }
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            // Clear Background Sky
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update Mario & Physics
+            mario.update(levelMap);
+
+            // Camera follow Mario
+            cameraX = Math.max(0, mario.x - canvas.width / 3);
+
+            // Pit fall check
+            if (mario.y > canvas.height + 50) {
+                lives--;
+                updateHUD();
+                if (lives <= 0) {
+                    gameOver(false);
+                } else {
+                    AudioFX.playGameOver();
+                    mario.reset();
+                }
+            }
+
+            // Update Goombas
+            goombas.forEach(g => {
+                if (g.alive) g.update(levelMap);
+            });
+
+            // Collisions
+            checkEnemyCollisions();
+            checkCoinCollisions();
+            checkLevelFinish();
+
+            // Render Layer
+            levelMap.draw(ctx, cameraX);
+            goombas.forEach(g => {
+                if (g.alive) g.draw(ctx, cameraX);
+            });
+            mario.draw(ctx, cameraX);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function resetGame() {
+            score = 0;
+            coins = 0;
+            lives = 3;
+            cameraX = 0;
+            mario.reset();
+            levelMap = new LevelMap();
+            spawnEnemies();
+            updateHUD();
+        }
+
+        startBtn.addEventListener('click', () => {
+            AudioFX.init();
+            resetGame();
+            overlay.classList.add('hidden');
+            gameRunning = true;
+            requestAnimationFrame(gameLoop);
+        });
+    </script>
+</body>
+</html>
